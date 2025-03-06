@@ -168,57 +168,60 @@ def cut_polygon_quadrants(poly, x_cut, y_cut):
 
 def mix_polygons_with_vertical_cuts(polygons, h_cuts, v_cuts):
     """
-    Mixa più poligoni usando sia tagli orizzontali che verticali alternati.
+    Mixa più poligoni usando sia tagli orizzontali che verticali in modo più aggressivo.
     """
     if not polygons or len(polygons) < 2:
         return polygons[0] if polygons else None
     
-    # Assicurati di avere abbastanza punti di taglio
-    required_cuts = len(polygons) - 1
-    if len(h_cuts) < required_cuts or len(v_cuts) < required_cuts:
-        print(f"Errore: servono {required_cuts} punti di taglio per ogni asse")
-        return None
+    # Inizia con un canvas vuoto
+    result = None
     
-    # Inizia con l'ultimo poligono
-    result = polygons[-1]
+    # Numero di divisioni (griglia)
+    n_rows = min(len(polygons), 3)  # max 3 righe
+    n_cols = min(len(polygons), 3)  # max 3 colonne
     
-    # Per ogni punto di taglio, partendo dall'ultimo
-    for i in range(required_cuts - 1, -1, -1):
-        if i % 2 == 0:  # Taglio orizzontale
-            top_poly_i, _ = cut_polygon_at_y(polygons[i], h_cuts[i])
-            _, bottom_result = cut_polygon_at_y(result, h_cuts[i])
+    # Crea una griglia e assegna a ciascuna cella un font diverso
+    for i in range(n_rows):
+        for j in range(n_cols):
+            # Seleziona un font (in modo ciclico)
+            font_idx = (i * n_cols + j) % len(polygons)
+            poly = polygons[font_idx]
             
-            parts = []
-            if top_poly_i and not top_poly_i.is_empty:
-                parts.append(top_poly_i)
-            if bottom_result and not bottom_result.is_empty:
-                parts.append(bottom_result)
+            if poly is None or poly.is_empty:
+                continue
                 
-        else:  # Taglio verticale
-            left_poly_i, _ = cut_polygon_at_x(polygons[i], v_cuts[i])
-            _, right_result = cut_polygon_at_x(result, v_cuts[i])
+            # Calcola i limiti della cella
+            y_min = h_cuts[0] * i / n_rows if h_cuts else i * 1000 / n_rows
+            y_max = h_cuts[0] * (i + 1) / n_rows if h_cuts else (i + 1) * 1000 / n_rows
+            x_min = v_cuts[0] * j / n_cols if v_cuts else j * 1000 / n_cols
+            x_max = v_cuts[0] * (j + 1) / n_cols if v_cuts else (j + 1) * 1000 / n_cols
             
-            parts = []
-            if left_poly_i and not left_poly_i.is_empty:
-                parts.append(left_poly_i)
-            if right_result and not right_result.is_empty:
-                parts.append(right_result)
-        
-        # Unisci le parti
-        if parts:
-            result = unary_union([p for p in parts if p])
+            # Ritaglia il poligono alla cella corrente
+            # Prima orizzontalmente
+            _, bottom_half = cut_polygon_at_y(poly, y_min)
+            top_half, _ = cut_polygon_at_y(bottom_half, y_max) if bottom_half else (None, None)
+            
+            # Poi verticalmente
+            if top_half:
+                _, right_half = cut_polygon_at_x(top_half, x_min)
+                cell_piece, _ = cut_polygon_at_x(right_half, x_max) if right_half else (None, None)
+                
+                # Aggiungi al risultato
+                if cell_piece and not cell_piece.is_empty:
+                    if result is None:
+                        result = cell_piece
+                    else:
+                        result = unary_union([result, cell_piece])
     
     return result
 
 def mix_polygons_quadrants(polygons, x_cut, y_cut):
     """
     Mixa poligoni dividendoli in quattro quadranti e
-    prendendo un quadrante diverso da ogni font.
+    prendendo un quadrante diverso da ogni font in modo casuale.
     """
-    if len(polygons) < 4:
-        print("Servono almeno 4 font per la modalità quadranti")
-        # Se non ci sono abbastanza font, usiamo il metodo standard
-        return mix_multiple_polygons(polygons, [y_cut])
+    if len(polygons) < 2:
+        return polygons[0] if polygons else None
     
     # Dividi ogni poligono in quadranti
     quadrants = []
@@ -231,21 +234,34 @@ def mix_polygons_quadrants(polygons, x_cut, y_cut):
         tl, tr, bl, br = cut_polygon_quadrants(poly, x_cut, y_cut)
         quadrants.append([tl, tr, bl, br])
     
-    # Scegli da quali font prendere i quadranti (rotazione)
-    # font 0: alto-sinistra
-    # font 1: alto-destra
-    # font 2: basso-sinistra
-    # font 3: basso-destra
-    selected_quadrants = []
+    # Se abbiamo meno di 4 font, duplichiamo i font esistenti
+    while len(quadrants) < 4:
+        quadrants.append(quadrants[len(quadrants) % len(polygons)])
     
-    for i in range(min(4, len(quadrants))):
-        q = quadrants[i][i]
-        if q and not q.is_empty:
-            selected_quadrants.append(q)
+    # Seleziona quadranti in modo più variegato
+    # Ogni quadrante proviene da un font diverso e la scelta è randomizzata
+    selected_quadrants = [None, None, None, None]  # [tl, tr, bl, br]
+    available_indices = list(range(len(quadrants)))
+    random.shuffle(available_indices)
+    
+    # Seleziona quadrante top-left
+    selected_quadrants[0] = quadrants[available_indices[0]][0]  # tl dal font 1
+    
+    # Seleziona quadrante top-right
+    selected_quadrants[1] = quadrants[available_indices[1]][1]  # tr dal font 2
+    
+    # Seleziona quadrante bottom-left
+    selected_quadrants[2] = quadrants[available_indices[2]][2]  # bl dal font 3
+    
+    # Seleziona quadrante bottom-right
+    selected_quadrants[3] = quadrants[available_indices[3]][3]  # br dal font 4
+    
+    # Filtra i quadranti non validi
+    valid_quadrants = [q for q in selected_quadrants if q and not q.is_empty]
     
     # Unisci i quadranti selezionati
-    if selected_quadrants:
-        return unary_union(selected_quadrants)
+    if valid_quadrants:
+        return unary_union(valid_quadrants)
     return None
 
 def mix_multiple_polygons(polygons, cut_points):
@@ -263,28 +279,57 @@ def mix_multiple_polygons(polygons, cut_points):
         return polygons[0] if polygons else None
     
     if len(cut_points) != len(polygons) - 1:
-        print("Errore: il numero di punti di taglio deve essere fonts - 1")
-        return None
+        print(f"Errore: servono {len(polygons)-1} punti di taglio, ne ho trovati {len(cut_points)}")
+        # Aggiustiamo automaticamente se necessario
+        if len(cut_points) < len(polygons) - 1:
+            # Aggiungiamo punti equidistanti
+            missing = len(polygons) - 1 - len(cut_points)
+            additional_points = [0.5] * missing
+            cut_points = cut_points + additional_points
+        else:
+            # Tagliamo i punti in eccesso
+            cut_points = cut_points[:len(polygons)-1]
+        
+        print(f"Punti di taglio aggiustati a: {cut_points}")
     
-    # Iniziamo con l'ultimo poligono e risaliamo
-    result = polygons[-1]
+    # Creiamo una copia di lavoro dei poligoni e punti di taglio
+    working_polygons = polygons.copy()
+    working_cut_points = cut_points.copy()
     
-    # Per ogni punto di taglio, partendo dall'ultimo
-    for i in range(len(cut_points) - 1, -1, -1):
-        # Tagliamo il risultato corrente al punto di taglio i
-        _, bottom_result = cut_polygon_at_y(result, cut_points[i])
-        
-        # Tagliamo il poligono i al punto di taglio i
-        top_poly_i, _ = cut_polygon_at_y(polygons[i], cut_points[i])
-        
-        # Uniamo la parte superiore del poligono i con la parte inferiore del risultato
-        parts = []
-        if top_poly_i and not top_poly_i.is_empty:
-            parts.append(top_poly_i)
-        if bottom_result and not bottom_result.is_empty:
-            parts.append(bottom_result)
-        
-        result = unary_union([p for p in parts if p])
+    # Iniziamo con un poligono vuoto
+    result = None
+    
+    # Algoritmo migliorato: dividiamo lo spazio verticalmente in N parti
+    # e prendiamo una parte da ciascun font
+    for i, poly in enumerate(working_polygons):
+        if poly is None or poly.is_empty:
+            continue
+            
+        if i == 0:  # Primo font: prendiamo la parte superiore
+            # Taglia al primo punto di taglio
+            top_part, _ = cut_polygon_at_y(poly, working_cut_points[0])
+            if top_part and not top_part.is_empty:
+                result = top_part
+                
+        elif i == len(working_polygons) - 1:  # Ultimo font: prendiamo la parte inferiore
+            # Taglia all'ultimo punto di taglio
+            _, bottom_part = cut_polygon_at_y(poly, working_cut_points[-1])
+            if bottom_part and not bottom_part.is_empty:
+                if result is None:
+                    result = bottom_part
+                else:
+                    result = unary_union([result, bottom_part])
+                    
+        else:  # Font intermedi: prendiamo la fetta nel mezzo
+            # Taglia tra il punto i-1 e il punto i
+            _, temp = cut_polygon_at_y(poly, working_cut_points[i-1])
+            if temp and not temp.is_empty:
+                middle_part, _ = cut_polygon_at_y(temp, working_cut_points[i])
+                if middle_part and not middle_part.is_empty:
+                    if result is None:
+                        result = middle_part
+                    else:
+                        result = unary_union([result, middle_part])
     
     return result
 
@@ -607,6 +652,69 @@ def contours_to_glyph(contours):
         pen.closePath()
     return pen.glyph()
 
+def mix_fonts_checkerboard(polygons, h_cuts, v_cuts):
+    """
+    Mixa più poligoni usando una disposizione a scacchiera.
+    """
+    if not polygons or len(polygons) < 2:
+        return polygons[0] if polygons else None
+    
+    if not h_cuts or not v_cuts:
+        print("Errore: punti di taglio mancanti")
+        return polygons[0]  
+    
+    print(f"Mescolando {len(polygons)} poligoni con scacchiera")
+    print(f"Tagli orizzontali: {h_cuts}")
+    print(f"Tagli verticali: {v_cuts}")
+    
+    rows = len(h_cuts) + 1
+    cols = len(v_cuts) + 1
+    
+    all_h_cuts = [0] + sorted(h_cuts) + [1000]
+    all_v_cuts = [0] + sorted(v_cuts) + [1000]
+    
+    result = None
+    
+    for row in range(rows):
+        for col in range(cols):
+            font_idx = (row + col) % len(polygons)
+            
+            poly = polygons[font_idx]
+            if poly is None or poly.is_empty:
+                continue
+            
+            y_min = all_h_cuts[row] 
+            y_max = all_h_cuts[row + 1]
+            x_min = all_v_cuts[col]
+            x_max = all_v_cuts[col + 1]
+            
+            print(f"Cella [{row},{col}] usando font {font_idx}, limiti: y({y_min}-{y_max}), x({x_min}-{x_max})")
+            
+            cell_piece = None
+            try:
+                _, bottom_half = cut_polygon_at_y(poly, y_min)
+                top_half, _ = cut_polygon_at_y(bottom_half, y_max) if bottom_half else (None, None)
+                
+                if top_half and not top_half.is_empty:
+                    _, right_half = cut_polygon_at_x(top_half, x_min)
+                    cell_piece, _ = cut_polygon_at_x(right_half, x_max) if right_half else (None, None)
+            except Exception as e:
+                print(f"Errore nel taglio cella [{row},{col}]: {e}")
+                continue
+                
+            if cell_piece and not cell_piece.is_empty:
+                if result is None:
+                    result = cell_piece
+                else:
+                    result = unary_union([result, cell_piece])
+    
+    if result is None or result.is_empty:
+        print("Avviso: scacchiera ha prodotto un poligono vuoto, uso il primo poligono")
+        return polygons[0]
+        
+    return result
+
+
 # ------------------------------------------------------------------------
 # CREAZIONE FONT CON TUTTE LE LETTERE (A-Z)
 # ------------------------------------------------------------------------
@@ -797,12 +905,11 @@ def create_alphabet_font(letters_dict, output_path, font_name="MixedFont"):
                 new_font["hmtx"].metrics[letter] = (500, 0)
             else:
                 g = contours_to_glyph(contours)
-                # Calcoliamo l'advance width basato sul contorno
                 max_x = 0
                 for c in contours:
                     if c:
                         max_x = max(max_x, max(x for x, y in c))
-                advance = max(500, int(max_x) + 100)  # Min 500, o max_x + margine
+                advance = max(500, int(max_x) + 100)
                 new_font["hmtx"].metrics[letter] = (advance, 0)
                 
             new_font["glyf"].glyphs[letter] = g
@@ -820,12 +927,12 @@ def create_alphabet_font(letters_dict, output_path, font_name="MixedFont"):
             nr.string = nameString.encode('utf-16-be')
             return nr
         
-        new_font["name"].names.append(_makeName(font_name, 1))  # Font Family
-        new_font["name"].names.append(_makeName("Regular", 2))  # Font Subfamily
-        new_font["name"].names.append(_makeName(f"{font_name} Regular", 3))  # Unique ID
-        new_font["name"].names.append(_makeName(font_name, 4))  # Full font name
-        new_font["name"].names.append(_makeName("Version 1.000", 5))  # Version
-        new_font["name"].names.append(_makeName(f"{font_name}-Regular", 6))  # PostScript name
+        new_font["name"].names.append(_makeName(font_name, 1))  
+        new_font["name"].names.append(_makeName("Regular", 2)) 
+        new_font["name"].names.append(_makeName(f"{font_name} Regular", 3))  
+        new_font["name"].names.append(_makeName(font_name, 4))  
+        new_font["name"].names.append(_makeName("Version 1.000", 5))  
+        new_font["name"].names.append(_makeName(f"{font_name}-Regular", 6)) 
         
         # =============== POST
         new_font["post"] = newTable("post")
@@ -840,16 +947,13 @@ def create_alphabet_font(letters_dict, output_path, font_name="MixedFont"):
         post_table.minMemType1 = 0
         post_table.maxMemType1 = 0
         
-        # =============== loca (necessaria per TrueType)
         new_font["loca"] = newTable("loca")
         
-        # =============== RICALCOLA BOUNDING BOX DI OGNI GLIFO
         for gname in new_font.getGlyphOrder():
             g = new_font["glyf"][gname]
             if g is not None:
                 g.recalcBounds(None)
         
-        # =============== AGGIORNA head.xMin, xMax, yMin, yMax
         all_xmin = []
         all_xmax = []
         all_ymin = []
@@ -915,20 +1019,20 @@ class FontGeneratorThread(QThread):
     update_progress = pyqtSignal(int, str)
     generation_complete = pyqtSignal(bool, str, dict)
     
-    def __init__(self, font_paths, cut_method, h_cuts=None, v_cuts=None, normalize=True, font_name="MixedFont"):
+    def __init__(self, font_paths, cut_method, h_cuts=None, v_cuts=None, normalize=True, use_vertical_cuts=False, font_name="MixedFont"):
         super().__init__()
         self.font_paths = font_paths
-        self.cut_method = cut_method  # "random", "equal", "custom", "mixed_hv", "quadrants"
-        self.h_cuts = h_cuts  # Lista di percentuali (0-1) o None
-        self.v_cuts = v_cuts  # Lista di percentuali (0-1) o None
+        self.cut_method = cut_method
+        self.h_cuts = h_cuts  
+        self.v_cuts = v_cuts  
         self.normalize = normalize
+        self.use_vertical_cuts = use_vertical_cuts
         self.font_name = font_name
         self.letters_dict = {}
         self.output_path = "output/MixedFont.ttf"
     
     def run(self):
         try:
-            # Aggiungiamo un log per debug
             print("Thread avviato - inizializzazione...")
             
             num_fonts = len(self.font_paths)
@@ -936,160 +1040,93 @@ class FontGeneratorThread(QThread):
                 self.generation_complete.emit(False, "Servono almeno 2 font", {})
                 return
                 
-            # Uso corretto del segnale con .emit()
             self.update_progress.emit(5, "Inizializzazione...")
             
-            # Prepariamo le lettere
             self.letters_dict = {}
             letters = list(ascii_uppercase)
             
             for i, letter in enumerate(letters):
                 progress = 5 + int(85 * (i / len(letters)))
-                # Uso corretto del segnale con .emit()
                 self.update_progress.emit(progress, f"Elaborazione lettera {letter}...")
                 
-                # Determiniamo i punti di taglio per questa lettera
                 h_cuts = []
                 v_cuts = []
                 
                 if self.cut_method == "random":
-                    # Punti casuali
                     h_cuts = [random.uniform(0.2, 0.8) for _ in range(num_fonts - 1)]
-                    h_cuts.sort()  # Ordiniamo per garantire sovrapposizione corretta
+                    h_cuts.sort()  
                     
-                    # Anche tagli verticali casuali per mixed_hv e quadrants
-                    v_cuts = [random.uniform(0.2, 0.8) for _ in range(num_fonts - 1)]
-                    v_cuts.sort()
+                    if self.use_vertical_cuts:
+                        v_cuts = [random.uniform(0.2, 0.8) for _ in range(num_fonts - 1)]
+                        v_cuts.sort()
                     
                 elif self.cut_method == "equal":
-                    # Taglio equidistante
                     h_cuts = [float(i+1)/num_fonts for i in range(num_fonts - 1)]
-                    v_cuts = h_cuts.copy()  # Stessi valori per tagli verticali
                     
-                else:  # "custom", "mixed_hv", "quadrants"
-                    # Usiamo i valori personalizzati
+                    if self.use_vertical_cuts:
+                        v_cuts = h_cuts.copy()
+                    
+                else:  
                     h_cuts = self.h_cuts[:num_fonts-1] if self.h_cuts else [0.5] * (num_fonts - 1)
                     
-                    if self.cut_method in ["mixed_hv", "quadrants"]:
-                        v_cuts = self.v_cuts[:num_fonts-1] if self.v_cuts else [0.5] * (num_fonts - 1)
+                    if self.use_vertical_cuts and self.v_cuts:
+                        v_cuts = self.v_cuts[:num_fonts-1]
                 
-                # Assembliamo la lettera in base al metodo di taglio
+                polygons = []
+                for font_path in self.font_paths:
+                    try:
+                        font = TTFont(font_path)
+                        contours = get_glyph_contours(font, letter)
+                        font.close()
+                        
+                        poly = unary_union([polygon_from_contour(c) for c in contours if c])
+                        
+                        if self.normalize and poly and not poly.is_empty:
+                            poly = normalize_glyph_polygon(poly, target_height=1000)
+                            
+                        polygons.append(poly if poly else None)
+                    except Exception as e:
+                        print(f"Errore nel leggere font {font_path}: {str(e)}")
+                        polygons.append(None)
+                
+                valid_polygons = [p for p in polygons if p and not p.is_empty]
                 poly = None
                 
-                if self.cut_method in ["random", "equal", "custom"]:
-                    # Metodo standard: solo tagli orizzontali
-                    poly = assemble_letter_multiple_fonts(
-                        self.font_paths, 
-                        letter, 
-                        h_cuts,
-                        normalize=self.normalize
-                    )
+                if valid_polygons:
+                    normalized_h_cuts = [y * 1000 for y in h_cuts]
                     
-                elif self.cut_method == "mixed_hv":
-                    # Metodo misto: alternanza di tagli orizzontali e verticali
-                    # Leggiamo i contorni da ogni font e li normalizziamo
-                    polygons = []
-                    for font_path in self.font_paths:
-                        try:
-                            font = TTFont(font_path)
-                            contours = get_glyph_contours(font, letter)
-                            font.close()
-                            
-                            # Convertiamo in poligono
-                            poly = unary_union([polygon_from_contour(c) for c in contours if c])
-                            
-                            # Normalizza se richiesto
-                            if self.normalize and poly and not poly.is_empty:
-                                poly = normalize_glyph_polygon(poly, target_height=1000)
-                                
-                            polygons.append(poly if poly else None)
-                        except Exception as e:
-                            print(f"Errore nel leggere font {font_path}: {str(e)}")
-                            polygons.append(None)
-                    
-                    # Filtriamo i poligoni nulli
-                    valid_polygons = [p for p in polygons if p and not p.is_empty]
-                    
-                    if valid_polygons:
-                        # Normalizziamo i punti di taglio
-                        normalized_h_cuts = [y * 1000 for y in h_cuts]
+                    if self.use_vertical_cuts and v_cuts:
                         normalized_v_cuts = [x * 1000 for x in v_cuts]
-                        
-                        # Mixiamo con tagli alternati
-                        poly = mix_polygons_with_vertical_cuts(
-                            valid_polygons, 
-                            normalized_h_cuts, 
-                            normalized_v_cuts
-                        )
-                
-                elif self.cut_method == "quadrants":
-                    # Metodo a quadranti: dividiamo in 4 parti e prendiamo una da ogni font
-                    # Leggiamo i contorni da ogni font e li normalizziamo
-                    polygons = []
-                    for font_path in self.font_paths:
-                        try:
-                            font = TTFont(font_path)
-                            contours = get_glyph_contours(font, letter)
-                            font.close()
-                            
-                            # Convertiamo in poligono
-                            poly = unary_union([polygon_from_contour(c) for c in contours if c])
-                            
-                            # Normalizza se richiesto
-                            if self.normalize and poly and not poly.is_empty:
-                                poly = normalize_glyph_polygon(poly, target_height=1000)
-                                
-                            polygons.append(poly if poly else None)
-                        except Exception as e:
-                            print(f"Errore nel leggere font {font_path}: {str(e)}")
-                            polygons.append(None)
-                    
-                    # Filtriamo i poligoni nulli
-                    valid_polygons = [p for p in polygons if p and not p.is_empty]
-                    
-                    if valid_polygons:
-                        # Prendiamo solo il primo punto di taglio per ogni asse
-                        y_cut = h_cuts[0] * 1000 if h_cuts else 500
-                        x_cut = v_cuts[0] * 1000 if v_cuts else 500
-                        
-                        # Mixiamo con divisione in quadranti
-                        poly = mix_polygons_quadrants(valid_polygons, x_cut, y_cut)
+                        poly = mix_fonts_checkerboard(valid_polygons, normalized_h_cuts, normalized_v_cuts)
+                    else:
+                        poly = mix_multiple_polygons(valid_polygons, normalized_h_cuts)
                 
                 if poly and not poly.is_empty:
                     final_contours = polygon_to_contours(poly)
                     self.letters_dict[letter] = final_contours
                 else:
-                    # Glifo invisibile
                     self.letters_dict[letter] = []
             
-            # Uso corretto del segnale con .emit()
             self.update_progress.emit(90, "Creazione del font...")
             
-            # Percorso del file output - aggiungiamo un timestamp per evitare conflitti
             import time
             timestamp = int(time.time())
             os.makedirs("output", exist_ok=True)
             
-            # Primo tentativo con nome base
             self.output_path = os.path.join("output", f"{self.font_name}.ttf")
             
-            # Crea un nome di file alternativo in caso il primo fallisca
             alt_output_path = os.path.join("output", f"{self.font_name}_{timestamp}.ttf")
             
-            # Creiamo il font
             success, result = create_alphabet_font(self.letters_dict, self.output_path, self.font_name)
             
-            # Se la creazione è riuscita ma con un nome file diverso, aggiorniamo il percorso
             if success and isinstance(result, str) and os.path.exists(result):
                 self.output_path = result
                 
-            # Uso corretto del segnale con .emit()
             self.update_progress.emit(100, "Completato!")
             
             if success:
                 self.generation_complete.emit(True, self.output_path, self.letters_dict)
             else:
-                # Secondo tentativo con nome alternativo in caso di errore "Permission denied"
                 if "Permission denied" in str(result):
                     success, result = create_alphabet_font(self.letters_dict, alt_output_path, self.font_name)
                     if success:
@@ -1097,14 +1134,12 @@ class FontGeneratorThread(QThread):
                         self.generation_complete.emit(True, self.output_path, self.letters_dict)
                         return
                 
-                # Se anche il secondo tentativo fallisce, emette un errore
                 self.generation_complete.emit(False, f"Errore: {result}", {})
                 
         except Exception as e:
             import traceback
-            traceback.print_exc()  # Stampa l'errore completo nella console
+            traceback.print_exc()  
             
-            # Uso corretto del segnale con .emit()
             self.update_progress.emit(0, f"Errore: {str(e)}")
             self.generation_complete.emit(False, f"Errore: {str(e)}", {})
 
@@ -1117,7 +1152,8 @@ class LetterPreviewWidget(QWidget):
         super().__init__(parent)
         self.letter = letter
         self.contours = []
-        self.cut_lines = []  # Lista di valori y (0-1)
+        self.h_cut_lines = []  
+        self.v_cut_lines = []  
         self.setMinimumSize(120, 150)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
@@ -1126,7 +1162,11 @@ class LetterPreviewWidget(QWidget):
         self.update()
         
     def setCutLines(self, cut_points):
-        self.cut_lines = cut_points
+        self.h_cut_lines = cut_points
+        self.update()
+    
+    def setVerticalCutLines(self, cut_points):
+        self.v_cut_lines = cut_points
         self.update()
         
     def paintEvent(self, event):
@@ -1155,13 +1195,20 @@ class LetterPreviewWidget(QWidget):
             painter.drawText(draw_rect, Qt.AlignCenter, "Nessun\ncontorno")
             return
             
-        # Disegna le linee di taglio
+        # Disegna le linee di taglio orizzontali
         painter.setPen(QPen(QColor(255, 0, 0, 128), 1))
-        for cut in self.cut_lines:
-            # QUESTA È LA PARTE CORRETTA: Usa QPointF per coordinate float
+        for cut in self.h_cut_lines:
             y_pos = draw_rect.top() + (1.0 - cut) * draw_rect.height()
             start_point = QPointF(draw_rect.left(), y_pos)
             end_point = QPointF(draw_rect.right(), y_pos)
+            painter.drawLine(start_point, end_point)
+            
+        # Disegna le linee di taglio verticali
+        painter.setPen(QPen(QColor(0, 0, 255, 128), 1))
+        for cut in self.v_cut_lines:
+            x_pos = draw_rect.left() + cut * draw_rect.width()
+            start_point = QPointF(x_pos, draw_rect.top())
+            end_point = QPointF(x_pos, draw_rect.bottom())
             painter.drawLine(start_point, end_point)
             
         # Disegna il contorno della lettera
@@ -1332,7 +1379,7 @@ class FontMixerApp(QMainWindow):
         self.available_fonts = []
         self.selected_fonts = []
         self.cut_method = "random"
-        self.custom_cuts = [0.5]  # Valore default
+        self.custom_cuts = [0.5] 
         self.letters_dict = {}
         self.output_font_path = ""
         
@@ -1340,14 +1387,11 @@ class FontMixerApp(QMainWindow):
         self.loadAvailableFonts()
         
     def setupUi(self):
-        # Widget centrale
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Layout principale
         main_layout = QVBoxLayout(central_widget)
         
-        # Tabs
         self.tabs = QTabWidget()
         self.tab_generator = QWidget()
         self.tab_preview = QWidget()
@@ -1360,11 +1404,9 @@ class FontMixerApp(QMainWindow):
         # --- TAB GENERATORE ---
         generator_layout = QVBoxLayout(self.tab_generator)
         
-        # Gruppo Font
         font_group = QGroupBox("Selezione Font")
         font_layout = QVBoxLayout(font_group)
         
-        # Layout per aggiungere font
         add_font_layout = QHBoxLayout()
         self.font_list = QListWidget()
         self.font_list.setSelectionMode(QListWidget.ExtendedSelection)
@@ -1386,14 +1428,11 @@ class FontMixerApp(QMainWindow):
         
         font_layout.addLayout(add_font_layout)
         
-        # Gruppo opzioni di mixaggio
         mix_group = QGroupBox("Opzioni di Mixaggio")
         mix_layout = QVBoxLayout(mix_group)
         
-        # Metodo di taglio
         self.setupMixingOptions(mix_layout)
         
-        # Nome del font
         name_layout = QHBoxLayout()
         name_layout.addWidget(QLabel("Nome del font:"))
         self.font_name_edit = QLineEdit("MixedFont")
@@ -1401,13 +1440,11 @@ class FontMixerApp(QMainWindow):
         
         mix_layout.addLayout(name_layout)
         
-        # Pulsante genera
         generate_layout = QHBoxLayout()
         self.btn_generate = QPushButton("GENERA FONT")
         self.btn_generate.setMinimumHeight(40)
         generate_layout.addWidget(self.btn_generate)
         
-        # Progress bar
         progress_layout = QHBoxLayout()
         self.progress_bar = QProgressBar()
         self.progress_bar.setValue(0)
@@ -1415,7 +1452,6 @@ class FontMixerApp(QMainWindow):
         progress_layout.addWidget(self.progress_bar, 3)
         progress_layout.addWidget(self.progress_status, 1)
         
-        # Aggiungi i gruppi al tab generatore
         generator_layout.addWidget(font_group, 3)
         generator_layout.addWidget(mix_group, 2)
         generator_layout.addLayout(generate_layout)
@@ -1424,10 +1460,8 @@ class FontMixerApp(QMainWindow):
         # --- TAB ANTEPRIMA ---
         preview_layout = QVBoxLayout(self.tab_preview)
         
-        # Layout orizzontale per anteprima e controlli
         preview_controls_layout = QHBoxLayout()
         
-        # Area di scorrimento per le lettere
         letters_scroll = QScrollArea()
         letters_scroll.setWidgetResizable(True)
         letters_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1435,7 +1469,6 @@ class FontMixerApp(QMainWindow):
         letters_container = QWidget()
         self.letters_grid = QGridLayout(letters_container)
         
-        # Creiamo widget per ciascuna lettera
         self.letter_widgets = {}
         for i, letter in enumerate(ascii_uppercase):
             row = i // 7
@@ -1447,7 +1480,6 @@ class FontMixerApp(QMainWindow):
         
         letters_scroll.setWidget(letters_container)
         
-        # Pannello controlli anteprima
         preview_controls = QWidget()
         preview_controls_panel = QVBoxLayout(preview_controls)
         
@@ -1463,29 +1495,26 @@ class FontMixerApp(QMainWindow):
         self.btn_test_text = QPushButton("Apri Editor di Testo")
         self.btn_test_text.setEnabled(False)
         
-        # Aggiungiamo i controlli
         preview_controls_panel.addWidget(self.preview_label)
         preview_controls_panel.addWidget(self.btn_export)
         preview_controls_panel.addWidget(self.btn_load_in_system)
         preview_controls_panel.addWidget(self.btn_test_text)
         preview_controls_panel.addStretch()
         
-        # Aggiungiamo a layout orizzontale
         preview_controls_layout.addWidget(letters_scroll, 7)
         preview_controls_layout.addWidget(preview_controls, 3)
         
-        # Anteprima alfabeto completo
         preview_alphabet_group = QGroupBox("Anteprima Alfabeto Completo")
         preview_alphabet_layout = QVBoxLayout(preview_alphabet_group)
         
         self.alphabet_preview = AlphabetPreviewWidget()
         preview_alphabet_layout.addWidget(self.alphabet_preview)
         
-        # Aggiungiamo tutto al layout principale della tab
         preview_layout.addLayout(preview_controls_layout, 7)
         preview_layout.addWidget(preview_alphabet_group, 3)
         
         # --- CONNESSIONI ---
+        self.check_vertical_cuts.stateChanged.connect(self.onVerticalCutsChanged)
         self.btn_add_font.clicked.connect(self.onAddFont)
         self.btn_remove_font.clicked.connect(self.onRemoveFont)
         self.btn_move_up.clicked.connect(self.onMoveUp)
@@ -1497,8 +1526,17 @@ class FontMixerApp(QMainWindow):
         self.btn_test_text.clicked.connect(self.onOpenTextEditor)
         self.font_list.itemSelectionChanged.connect(self.updateUI)
 
-        # Aggiorniamo lo stato iniziale dell'UI
         self.updateUI()
+        
+    def onVerticalCutsChanged(self, state):
+        """Gestisce l'attivazione/disattivazione dei tagli verticali"""
+        use_vertical = state == Qt.Checked
+        
+        if self.combo_cut_method.currentText() == "Personalizzato":
+            self.v_cuts_group.setVisible(use_vertical)
+            
+        if self.letters_dict:
+            self.updateLetterPreviews()
         
     def setupMixingOptions(self, mix_layout):
         """Configura le opzioni di mixaggio avanzate"""
@@ -1510,11 +1548,8 @@ class FontMixerApp(QMainWindow):
             "Casuale", 
             "Equidistante", 
             "Personalizzato", 
-            "Misto H/V",  # Nuovo metodo: alternanza orizzontale/verticale
-            "Quadranti"    # Nuovo metodo: divisione in quadranti
         ])
         cut_method_layout.addWidget(self.combo_cut_method)
-        
         mix_layout.addLayout(cut_method_layout)
         
         # Normalizzazione dimensione
@@ -1523,16 +1558,24 @@ class FontMixerApp(QMainWindow):
         self.check_normalize = QCheckBox()
         self.check_normalize.setChecked(True)
         norm_layout.addWidget(self.check_normalize)
+        
+        norm_layout.addSpacing(20)
+        norm_layout.addWidget(QLabel("Attiva tagli verticali:"))
+        self.check_vertical_cuts = QCheckBox()
+        self.check_vertical_cuts.setChecked(False)
+        norm_layout.addWidget(self.check_vertical_cuts)
         norm_layout.addStretch()
         
         mix_layout.addLayout(norm_layout)
+    
         
         # Gruppo taglio orizzontale
         self.h_cuts_group = QGroupBox("Punti di taglio orizzontali")
         h_cuts_layout = QGridLayout(self.h_cuts_group)
         
         self.h_cut_sliders = []
-        for i in range(4):  # Supportiamo fino a 5 font (4 punti di taglio)
+        
+        for i in range(4):  
             slider = QSlider(Qt.Horizontal)
             slider.setRange(10, 90)
             slider.setValue(50)
@@ -1546,17 +1589,20 @@ class FontMixerApp(QMainWindow):
             h_cuts_layout.addWidget(value_label, i, 2)
             
             slider.valueChanged.connect(lambda v, lbl=value_label: lbl.setText(f"{v}%"))
+            slider.valueChanged.connect(self.updateCutPreview)
             
             self.h_cut_sliders.append((slider, value_label))
-        
+            
         mix_layout.addWidget(self.h_cuts_group)
         
         # Gruppo taglio verticale (nuovo)
         self.v_cuts_group = QGroupBox("Punti di taglio verticali")
         v_cuts_layout = QGridLayout(self.v_cuts_group)
         
+        # Importante: inizializza l'array prima di usarlo
         self.v_cut_sliders = []
-        for i in range(4):  # Supportiamo fino a 5 font (4 punti di taglio)
+        
+        for i in range(4):
             slider = QSlider(Qt.Horizontal)
             slider.setRange(10, 90)
             slider.setValue(50)
@@ -1570,6 +1616,7 @@ class FontMixerApp(QMainWindow):
             v_cuts_layout.addWidget(value_label, i, 2)
             
             slider.valueChanged.connect(lambda v, lbl=value_label: lbl.setText(f"{v}%"))
+            slider.valueChanged.connect(self.updateCutPreview)
             
             self.v_cut_sliders.append((slider, value_label))
         
@@ -1578,7 +1625,22 @@ class FontMixerApp(QMainWindow):
         # Inizialmente nascondi i gruppi di sliders
         self.h_cuts_group.setVisible(False)
         self.v_cuts_group.setVisible(False)
-    
+        
+    def updateCutPreview(self):
+        """Aggiorna l'anteprima delle linee di taglio quando gli slider cambiano"""
+        if not self.letters_dict:
+            return  # Nessuna lettera da visualizzare
+        
+        # Ottieni i valori di taglio correnti
+        h_cuts = self.getCustomCutPoints()
+        v_cuts = self.getCustomVerticalCutPoints()
+        
+        # Aggiorna le linee di taglio in ogni widget lettera
+        for letter, widget in self.letter_widgets.items():
+            widget.setCutLines(h_cuts)
+            if hasattr(widget, 'setVerticalCutLines'):
+                widget.setVerticalCutLines(v_cuts)
+        
     def loadAvailableFonts(self):
         """Carica i font disponibili dalla cartella 'fonts'"""
         font_dir = "fonts"
@@ -1600,7 +1662,6 @@ class FontMixerApp(QMainWindow):
     
     def updateUI(self):
         """Aggiorna lo stato dell'interfaccia in base alla selezione corrente"""
-        # Aggiorna pulsanti font
         num_selected = len(self.font_list.selectedItems())
         self.btn_remove_font.setEnabled(num_selected > 0)
         
@@ -1611,33 +1672,26 @@ class FontMixerApp(QMainWindow):
         self.btn_move_up.setEnabled(num_selected == 1 and selected_row > 0)
         self.btn_move_down.setEnabled(
             num_selected == 1 and 
-            selected_row >= 0 and  # Assicurati che un elemento sia selezionato
+            selected_row >= 0 and  
             selected_row < self.font_list.count() - 1
         )
         
-        # Aggiorna stato generazione
         can_generate = self.font_list.count() >= 2
         self.btn_generate.setEnabled(can_generate)
         
-        # Aggiorna visibilità gruppi slider in base al metodo selezionato
         method = self.combo_cut_method.currentText()
-        
-        # Mostra/nascondi i gruppi di controllo in base al metodo di taglio
-        self.h_cuts_group.setVisible(method in ["Personalizzato", "Misto H/V", "Quadranti"])
-        self.v_cuts_group.setVisible(method in ["Misto H/V", "Quadranti"])
-        
-        # Aggiorna stato degli slider
+        use_vertical = self.check_vertical_cuts.isChecked()
         num_cuts = max(0, self.font_list.count() - 1)
         
-        # Abilita/disabilita slider orizzontali
+        self.h_cuts_group.setVisible(method == "Personalizzato")
         for i, (slider, label) in enumerate(self.h_cut_sliders):
-            enabled = i < num_cuts and method in ["Personalizzato", "Misto H/V", "Quadranti"]
+            enabled = i < num_cuts and method == "Personalizzato"
             slider.setEnabled(enabled)
             label.setEnabled(enabled)
         
-        # Abilita/disabilita slider verticali
+        self.v_cuts_group.setVisible(method == "Personalizzato" and use_vertical)
         for i, (slider, label) in enumerate(self.v_cut_sliders):
-            enabled = i < num_cuts and method in ["Misto H/V", "Quadranti"]
+            enabled = i < num_cuts and method == "Personalizzato" and use_vertical
             slider.setEnabled(enabled)
             label.setEnabled(enabled)
     
@@ -1748,14 +1802,14 @@ class FontMixerApp(QMainWindow):
         self.updateUI()
     
     def onCutMethodChanged(self, index):
-        """Gestisce il cambio del metodo di taglio"""
         method = self.combo_cut_method.currentText()
+        use_vertical = self.check_vertical_cuts.isChecked()
         
-        self.h_cuts_group.setVisible(method in ["Personalizzato", "Misto H/V", "Quadranti"])
-        self.v_cuts_group.setVisible(method in ["Misto H/V", "Quadranti"])
+        self.h_cuts_group.setVisible(method == "Personalizzato")
+        self.v_cuts_group.setVisible(method == "Personalizzato" and use_vertical)
         
         self.updateUI()
-    
+        
         if method == "Equidistante":
             self.updateEqualCutSliders()
             
@@ -1845,23 +1899,27 @@ class FontMixerApp(QMainWindow):
         
         font_paths = self.getSelectedFontPaths()
         
-        cut_method_map = {
-            "Casuale": "random",
-            "Equidistante": "equal",
-            "Personalizzato": "custom",
-            "Misto H/V": "mixed_hv",
-            "Quadranti": "quadrants"
-        }
-        cut_method = cut_method_map[self.combo_cut_method.currentText()]
-        
+        cut_method = self.combo_cut_method.currentText().lower()
         h_cuts = None
         v_cuts = None
         
-        if cut_method in ["custom", "mixed_hv", "quadrants"]:
+        
+        if cut_method in ["personalizzato"]:
             h_cuts = self.getCustomCutPoints()
-            
-        if cut_method in ["mixed_hv", "quadrants"]:
-            v_cuts = self.getCustomVerticalCutPoints()
+        elif cut_method == "equidistante":
+            num_cuts = self.font_list.count() - 1
+            h_cuts = [(i + 1) / (num_cuts + 1) for i in range(num_cuts)]
+        elif cut_method == "casuale":
+            num_cuts = self.font_list.count() - 1
+            h_cuts = [random.uniform(0.2, 0.8) for _ in range(num_cuts)]
+            h_cuts.sort()
+        
+        use_vertical_cuts = self.check_vertical_cuts.isChecked()
+        if use_vertical_cuts:
+            if cut_method == "personalizzato":
+                v_cuts = self.getCustomVerticalCutPoints()
+            else:
+                v_cuts = h_cuts.copy()
             
         normalize = self.check_normalize.isChecked()
         
@@ -1869,21 +1927,19 @@ class FontMixerApp(QMainWindow):
         if not font_name:
             font_name = "MixedFont"
             
-        # Crea thread generatore
         self.generator_thread = FontGeneratorThread(
             font_paths, 
             cut_method, 
             h_cuts, 
             v_cuts,
-            normalize,
+            self.check_normalize.isChecked(),
+            self.check_vertical_cuts.isChecked(),  
             font_name
         )
         
-        # Connetti segnali
         self.generator_thread.update_progress.connect(self.updateProgress)
         self.generator_thread.generation_complete.connect(self.onGenerationComplete)
         
-        # Avvia generazione
         self.generator_thread.start()
     
     def updateProgress(self, value, status):
@@ -1893,50 +1949,51 @@ class FontMixerApp(QMainWindow):
     
     def onGenerationComplete(self, success, message, letters_dict):
         """Gestisce il completamento della generazione"""
-        # Riabilita UI
         self.btn_generate.setEnabled(True)
-    
+        
         if not success:
             QMessageBox.warning(self, "Errore", f"Generazione fallita:\n{message}")
             return
-    
+        
         try:
-            # Verifica che il percorso sia valido
-            if not os.path.exists(message):
-                QMessageBox.warning(
+            if isinstance(message, str) and os.path.exists(message) and letters_dict:
+                self.letters_dict = letters_dict
+                self.output_font_path = message  
+                
+                print(f"Font generato: {self.output_font_path}")
+                print(f"Lettere generate: {len(self.letters_dict)}")
+                for letter, contours in self.letters_dict.items():
+                    print(f"Lettera {letter}: {len(contours)} contorni")
+                
+                try:
+                    print("Aggiornamento anteprime...")
+                    self.updateLetterPreviews()
+                    self.alphabet_preview.setLetters(letters_dict)
+                    print("Anteprima aggiornata")
+                except Exception as e:
+                    print(f"Errore nell'aggiornamento delle anteprime: {str(e)}")
+                    traceback.print_exc()
+                
+                self.btn_export.setEnabled(True)
+                self.btn_load_in_system.setEnabled(True)
+                self.btn_test_text.setEnabled(True)
+                
+                print("Passaggio alla tab di anteprima")
+                self.tabs.setCurrentIndex(1)
+                
+                QMessageBox.information(
                     self, 
-                    "File non trovato",
-                    f"Il file generato non è stato trovato in:\n{message}\n\n"
-                    "Controlla la cartella output manualmente."
+                    "Font Generato", 
+                    f"Font generato con successo!\nSalvato in: {self.output_font_path}"
                 )
-                return
-        
-            # Memorizza risultati
-            self.letters_dict = letters_dict
-            self.output_font_path = message  # Il percorso del font
-        
-            # Aggiorna anteprima con gestione errori
-            try:
-                self.updateLetterPreviews()
-                self.alphabet_preview.setLetters(letters_dict)
-            except Exception as e:
-                print(f"Errore nell'aggiornamento delle anteprime: {str(e)}")
-                traceback.print_exc()
-        
-            # Abilita controlli anteprima
-            self.btn_export.setEnabled(True)
-            self.btn_load_in_system.setEnabled(True)
-            self.btn_test_text.setEnabled(True)
-        
-            # Passa alla tab di anteprima
-            self.tabs.setCurrentIndex(1)
-        
-            # Notifica utente
-            QMessageBox.information(
-                self, 
-                "Font Generato", 
-                f"Font generato con successo!\nSalvato in: {self.output_font_path}"
-            )
+            else:
+                err_message = "Il file generato non è stato trovato o non contiene dati validi.\n"
+                if not isinstance(message, str) or not os.path.exists(message):
+                    err_message += f"File non trovato: {message}\n"
+                if not letters_dict:
+                    err_message += "Nessun contorno di lettere generato.\n"
+                    
+                QMessageBox.warning(self, "Errore di generazione", err_message)
         except Exception as e:
             QMessageBox.warning(
                 self, 
@@ -1950,23 +2007,37 @@ class FontMixerApp(QMainWindow):
         if not self.letters_dict:
             return
             
-        # Calcola punti di taglio per visualizzazione
-        cut_points = []
-        num_cuts = self.font_list.count() - 1
-        
-        if self.combo_cut_method.currentText() == "Personalizzato":
-            cut_points = self.getCustomCutPoints()
-        elif self.combo_cut_method.currentText() == "Equidistante":
-            cut_points = [(i + 1) / (num_cuts + 1) for i in range(num_cuts)]
-        else:
-            # Per il metodo casuale, non mostriamo linee
-            cut_points = []
-        
-        # Aggiorna ogni widget lettera
-        for letter, contours in self.letters_dict.items():
-            if letter in self.letter_widgets:
-                self.letter_widgets[letter].setContours(contours)
-                self.letter_widgets[letter].setCutLines(cut_points)
+        try:
+            h_cuts = []
+            v_cuts = []
+            method = self.combo_cut_method.currentText()
+            num_cuts = self.font_list.count() - 1
+            
+            if method == "Personalizzato":
+                h_cuts = self.getCustomCutPoints()
+            elif method == "Equidistante":
+                h_cuts = [(i + 1) / (num_cuts + 1) for i in range(num_cuts)]
+            elif method == "Casuale":
+                pass
+            
+            if self.check_vertical_cuts.isChecked():
+                if method == "Personalizzato":
+                    v_cuts = self.getCustomVerticalCutPoints()
+                elif method == "Equidistante":
+                    v_cuts = h_cuts.copy()
+            
+            print(f"Aggiornamento anteprime con h_cuts={h_cuts}, v_cuts={v_cuts}")
+            
+            for letter, contours in self.letters_dict.items():
+                if letter in self.letter_widgets:
+                    self.letter_widgets[letter].setContours(contours)
+                    self.letter_widgets[letter].setCutLines(h_cuts)
+                    
+                    if hasattr(self.letter_widgets[letter], 'setVerticalCutLines'):
+                        self.letter_widgets[letter].setVerticalCutLines(v_cuts)
+        except Exception as e:
+            print(f"Errore in updateLetterPreviews: {e}")
+            traceback.print_exc()
     
     def onExportFont(self):
         """Esporta il font generato"""
