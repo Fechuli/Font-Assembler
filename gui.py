@@ -124,20 +124,38 @@ class FontMixerApp(QMainWindow):
         
         preview_controls_layout = QHBoxLayout()
         
+        # Lettere scroll
         letters_scroll = QScrollArea()
         letters_scroll.setWidgetResizable(True)
         letters_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
         letters_container = QWidget()
-        self.letters_grid = QGridLayout(letters_container)
         
+        # Inizializza i widget per le lettere
         self.letter_widgets = {}
+        letters_grid_layout = QGridLayout(letters_container)
+        
+        # Prima riga: Lettere maiuscole
+        row = 0
         for i, letter in enumerate(ascii_uppercase):
-            row = i // 7
-            col = i % 7
-            
+            col = i % 7  # 7 colonne
+            if i > 0 and i % 7 == 0:
+                row += 1
+                
             letter_widget = LetterPreviewWidget(letter)
-            self.letters_grid.addWidget(letter_widget, row, col)
+            letters_grid_layout.addWidget(letter_widget, row, col)
+            self.letter_widgets[letter] = letter_widget
+        
+        # Righe successive: Lettere minuscole
+        lowercase_start_row = (len(ascii_uppercase) + 6) // 7  # Calcola la riga iniziale per le minuscole
+        row = lowercase_start_row
+        for i, letter in enumerate('abcdefghijklmnopqrstuvwxyz'):
+            col = i % 7  # 7 colonne
+            if i > 0 and i % 7 == 0:
+                row += 1
+                
+            letter_widget = LetterPreviewWidget(letter)
+            letters_grid_layout.addWidget(letter_widget, row, col)
             self.letter_widgets[letter] = letter_widget
         
         letters_scroll.setWidget(letters_container)
@@ -771,10 +789,10 @@ class FontMixerApp(QMainWindow):
             
         # Mostra anteprima
         family = families[0]
-        preview_font = QFont(family, 24)
+        preview_font = QFont(family, 18)
         
         self.preview_label.setFont(preview_font)
-        self.preview_label.setText("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        self.preview_label.setText("ABCDEFG\nabcdefg")
         
         QMessageBox.information(
             self, 

@@ -104,30 +104,28 @@ def mix_fonts_deterministic(polygons, h_cuts, v_cuts=None):
         h_cuts = [500]  # Dividi a metà orizzontalmente
     
     use_vertical = v_cuts and len(v_cuts) > 0
-    if not use_vertical:
-        v_cuts = [500]  # Dividi a metà verticalmente, anche se non richiesto esplicitamente
     
     # Normalizza i punti di taglio da 0-1000 a coordinate reali
     h_cuts_real = [min_y + (max_y - min_y) * cut / 1000.0 for cut in h_cuts]
-    v_cuts_real = [min_x + (max_x - min_x) * cut / 1000.0 for cut in v_cuts]
-    
-    # Aggiungi i bordi
-    all_h_cuts = [min_y] + h_cuts_real + [max_y]
-    all_v_cuts = [min_x] + v_cuts_real + [max_x]
-    
-    # Determina la dimensione della griglia
-    rows = len(all_h_cuts) - 1
-    cols = len(all_v_cuts) - 1 if use_vertical else 1
-    
-    print(f"Creating a {rows}x{cols} grid")
-    print(f"Horizontal cuts: {all_h_cuts}")
-    print(f"Vertical cuts: {all_v_cuts}")
-    
-    # Prepara la matrice di assegnazione
-    font_assignments = []
-    num_fonts = len(valid_polygons)
     
     if use_vertical:
+        v_cuts_real = [min_x + (max_x - min_x) * cut / 1000.0 for cut in v_cuts]
+        # Aggiungi i bordi
+        all_h_cuts = [min_y] + h_cuts_real + [max_y]
+        all_v_cuts = [min_x] + v_cuts_real + [max_x]
+        
+        # Determina la dimensione della griglia
+        rows = len(all_h_cuts) - 1
+        cols = len(all_v_cuts) - 1
+        
+        print(f"Creating a {rows}x{cols} grid with vertical cuts")
+        print(f"Horizontal cuts: {all_h_cuts}")
+        print(f"Vertical cuts: {all_v_cuts}")
+        
+        # Prepara la matrice di assegnazione
+        font_assignments = []
+        num_fonts = len(valid_polygons)
+        
         if num_fonts == 2:
             # Schema a 4 quadranti alternati per 2 font
             font_assignments = [
@@ -153,48 +151,70 @@ def mix_fonts_deterministic(polygons, h_cuts, v_cuts=None):
                 for j in range(cols):
                     row_assignments.append((i + j) % num_fonts)
                 font_assignments.append(row_assignments)
-    else:
-        # Senza tagli verticali, assegna un font per riga
+        
+        # Adatta la matrice alla dimensione effettiva della griglia
+        while len(font_assignments) < rows:
+            font_assignments.append(font_assignments[-1])
+        font_assignments = font_assignments[:rows]
+        
         for i in range(rows):
-            font_assignments.append([i % num_fonts])
-    
-    # Adatta la matrice alla dimensione effettiva della griglia
-    while len(font_assignments) < rows:
-        font_assignments.append(font_assignments[-1])
-    font_assignments = font_assignments[:rows]
-    
-    for i in range(rows):
-        while len(font_assignments[i]) < cols:
-            font_assignments[i].append(font_assignments[i][-1])
-        font_assignments[i] = font_assignments[i][:cols]
-    
-    print("Font assignment matrix:")
-    for row in font_assignments:
-        print(row)
-    
-    # Crea le parti e uniscile
-    result_polygons = []
-    
-    for i in range(rows):
-        for j in range(cols):
-            # Determina quale font usare per questa cella
-            font_idx = font_assignments[i][j]
-            if font_idx >= len(valid_polygons):
-                continue
+            while len(font_assignments[i]) < cols:
+                font_assignments[i].append(font_assignments[i][-1])
+            font_assignments[i] = font_assignments[i][:cols]
+        
+        print("Font assignment matrix:")
+        for row in font_assignments:
+            print(row)
+        
+        # Crea le parti e uniscile
+        result_polygons = []
+        
+        for i in range(rows):
+            for j in range(cols):
+                # Determina quale font usare per questa cella
+                font_idx = font_assignments[i][j]
+                if font_idx >= len(valid_polygons):
+                    continue
+                    
+                poly = valid_polygons[font_idx]
                 
+                # Crea un rettangolo per questa cella
+                cell_box = box(all_v_cuts[j], all_h_cuts[i], all_v_cuts[j+1], all_h_cuts[i+1])
+                
+                # Interseca il poligono del font con la cella
+                cell_part = poly.intersection(cell_box)
+                
+                if cell_part and not cell_part.is_empty:
+                    print(f"Cell [{i},{j}] using font {font_idx} - intersection success")
+                    result_polygons.append(cell_part)
+                else:
+                    print(f"Cell [{i},{j}] using font {font_idx} - empty intersection")
+    else:
+        # Mixaggio orizzontale senza tagli verticali
+        print(f"Creating horizontal slices with {len(h_cuts_real)+1} sections")
+        print(f"Horizontal cuts: {h_cuts_real}")
+        
+        # Aggiungi i bordi
+        all_h_cuts = [min_y] + h_cuts_real + [max_y]
+        result_polygons = []
+        
+        # Per ogni sezione orizzontale...
+        for i in range(len(all_h_cuts) - 1):
+            # Seleziona il font da usare per questa sezione (in modo ciclico)
+            font_idx = i % len(valid_polygons)
             poly = valid_polygons[font_idx]
             
-            # Crea un rettangolo per questa cella
-            cell_box = box(all_v_cuts[j], all_h_cuts[i], all_v_cuts[j+1], all_h_cuts[i+1])
+            # Crea un rettangolo per questa sezione
+            section_box = box(min_x, all_h_cuts[i], max_x, all_h_cuts[i+1])
             
-            # Interseca il poligono del font con la cella
-            cell_part = poly.intersection(cell_box)
+            # Interseca il poligono del font con la sezione
+            section_part = poly.intersection(section_box)
             
-            if cell_part and not cell_part.is_empty:
-                print(f"Cell [{i},{j}] using font {font_idx} - intersection success")
-                result_polygons.append(cell_part)
+            if section_part and not section_part.is_empty:
+                print(f"Section {i} using font {font_idx} - intersection success")
+                result_polygons.append(section_part)
             else:
-                print(f"Cell [{i},{j}] using font {font_idx} - empty intersection")
+                print(f"Section {i} using font {font_idx} - empty intersection")
     
     # Unisci tutte le parti
     if result_polygons:

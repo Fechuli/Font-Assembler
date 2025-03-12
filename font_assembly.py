@@ -132,8 +132,29 @@ def create_alphabet_font(letters_dict, output_path, font_name="MixedFont"):
         os2_table.ulUnicodeRange4 = 0
         os2_table.achVendID = "PYFT"
         os2_table.fsSelection = 64
-        os2_table.usFirstCharIndex = 0x0041  # 'A'
-        os2_table.usLastCharIndex = 0x005A   # 'Z'
+        
+        # Trova i limiti effettivi dei caratteri inclusi
+        if letters_dict:
+            min_char = min(ord(c) for c in letters_dict.keys())
+            max_char = max(ord(c) for c in letters_dict.keys())
+            os2_table.usFirstCharIndex = min_char
+            os2_table.usLastCharIndex = max_char
+        else:
+            os2_table.usFirstCharIndex = ord('A')  # Default: 'A'
+            os2_table.usLastCharIndex = ord('z')   # Default: 'z'
+        
+        os2_table.sTypoAscender = 800
+        os2_table.sTypoDescender = -200
+        os2_table.sTypoLineGap = 200
+        os2_table.usWinAscent = 1000
+        os2_table.usWinDescent = 200
+        os2_table.ulCodePageRange1 = 1  # Latin 1
+        os2_table.ulCodePageRange2 = 0
+        os2_table.sxHeight = 500
+        os2_table.sCapHeight = 700
+        os2_table.usDefaultChar = 0
+        os2_table.usBreakChar = 32
+        os2_table.usMaxContext = 1
         os2_table.sTypoAscender = 800
         os2_table.sTypoDescender = -200
         os2_table.sTypoLineGap = 200
@@ -158,7 +179,7 @@ def create_alphabet_font(letters_dict, output_path, font_name="MixedFont"):
         
         cmap_dict = {}
         for letter in letters_dict:
-            # A->0x0041, B->0x0042, ...
+            # A->0x0041, B->0x0042, ... a->0x0061, b->0x0062, ...
             codepoint = ord(letter)
             cmap_dict[codepoint] = letter
         subtable.cmap = cmap_dict

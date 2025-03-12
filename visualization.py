@@ -173,22 +173,49 @@ class AlphabetPreviewWidget(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, "Nessuna lettera generata")
             return
             
-        # Calcoliamo la disposizione delle lettere
-        num_letters = len(self.letters_dict)
-        cols = min(13, num_letters)  # Max 13 lettere per riga
+        # Dividi l'area in due sezioni: maiuscole e minuscole
+        uppercase_rect = QRectF(0, 0, self.width(), self.height() / 2)
+        lowercase_rect = QRectF(0, self.height() / 2, self.width(), self.height() / 2)
+        
+        # Disegna un separatore
+        painter.setPen(QPen(Qt.lightGray, 1, Qt.DashLine))
+        painter.drawLine(0, int(self.height() / 2), self.width(), int(self.height() / 2))
+        
+        # Calcola la disposizione delle lettere maiuscole
+        uppercase_letters = [letter for letter in sorted(self.letters_dict.keys()) if letter.isupper()]
+        num_uppercase = len(uppercase_letters)
+        cols_uppercase = min(13, num_uppercase)  # Max 13 lettere per riga
+        rows_uppercase = (num_uppercase + cols_uppercase - 1) // cols_uppercase
+        
+        cell_width_uppercase = uppercase_rect.width() / cols_uppercase
+        cell_height_uppercase = uppercase_rect.height() / rows_uppercase
+        
+        # Disegna le lettere maiuscole
+        self._draw_letters_section(painter, uppercase_rect, uppercase_letters, cols_uppercase)
+        
+        # Calcola la disposizione delle lettere minuscole
+        lowercase_letters = [letter for letter in sorted(self.letters_dict.keys()) if letter.islower()]
+        if lowercase_letters:  # Se ci sono lettere minuscole
+            num_lowercase = len(lowercase_letters)
+            cols_lowercase = min(13, num_lowercase)  # Max 13 lettere per riga
+            
+            # Disegna le lettere minuscole
+            self._draw_letters_section(painter, lowercase_rect, lowercase_letters, cols_lowercase)
+    
+    def _draw_letters_section(self, painter, section_rect, letters, cols):
+        """Helper per disegnare una sezione di lettere (maiuscole o minuscole)"""
+        num_letters = len(letters)
         rows = (num_letters + cols - 1) // cols
         
-        cell_width = self.width() / cols
-        cell_height = self.height() / rows
+        cell_width = section_rect.width() / cols
+        cell_height = section_rect.height() / rows
         
-        # Disegna ogni lettera
-        letters = sorted(self.letters_dict.keys())
         for i, letter in enumerate(letters):
             row = i // cols
             col = i % cols
             
-            x = col * cell_width
-            y = row * cell_height
+            x = section_rect.x() + col * cell_width
+            y = section_rect.y() + row * cell_height
             
             letter_rect = QRectF(x, y, cell_width, cell_height)
             
