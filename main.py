@@ -15,19 +15,15 @@ def main():
     Funzione principale che avvia l'applicazione.
     Crea le cartelle necessarie e inizializza l'interfaccia.
     """
-    # Crea l'applicazione QT
     app = QApplication(sys.argv)
     
-    # Assicurati che le cartelle necessarie esistano
     for folder in ["fonts", "output"]:
         if not os.path.exists(folder):
             os.makedirs(folder)
     
-    # Inizializza e mostra la finestra principale
     window = FontMixerApp()
     window.show()
     
-    # Entra nel loop degli eventi
     sys.exit(app.exec_())
 
 
